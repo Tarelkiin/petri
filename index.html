@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Petri · Living Culture</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=JetBrains+Mono:wght@300;400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<div class="app">
+  <aside id="creator"></aside>
+  <main class="dish-wrap">
+    <div id="dish"></div>
+    <div class="light-menu">
+      <button class="lm-btn" aria-expanded="false"><span class="lm-burger"><i></i><i></i><i></i></span><span class="lm-k">Light</span><span class="lm-cur"></span></button>
+      <div class="lm-list"></div>
+    </div>
+    <nav class="dish-tools">
+      <button data-act="tags" title="T">Labels</button>
+      <button data-act="clear" title="Del">Clear</button>
+      <button data-act="full" title="F">Fullscreen</button>
+      <button data-act="panel" title="H">Panel</button>
+    </nav>
+  </main>
+</div>
+<script src="js/core.js"></script>
+<script src="js/world.js"></script>
+<script src="js/creator.js"></script>
+<script>
+(function () {
+  const P = window.Petri;
+  const dish = new P.Dish(document.getElementById('dish'));
+  window.dish = dish;
+
+  const creator = new P.Creator(document.getElementById('creator'), {
+    nextFig: () => dish.fig + 1,
+    onSend: (g, preview, done) => {
+      g.size = P.lerp(0.95, 1.55, g.scale == null ? 0.5 : g.scale) * P.rand(0.96, 1.04); // honour the Size slider
+      const snap = preview.snapshot();
+      const target = dish.pickArrival();
+      preview.hidden = true;
+      // летящая капля с микробом
+      const fly = document.createElement('div'); fly.className = 'fly';
+      snap.canvas.style.width = snap.size + 'px'; snap.canvas.style.height = snap.size + 'px';
+      fly.append(snap.canvas); document.body.append(fly);
+      const endScale = (target.cssScale * g.size * dish.crowdK) / snap.U;
+      const x0 = snap.cx - snap.size / 2, y0 = snap.cy - snap.size / 2;
+      const dx = target.clientX - snap.cx, dy = target.clientY - snap.cy;
+      const rot0 = snap.rot * 180 / Math.PI;
+      fly.style.left = x0 + 'px'; fly.style.top = y0 + 'px';
+      const anim = fly.animate([
+        { transform: `translate(0,0) rotate(${rot0}deg) scale(1)`, opacity: 1, filter: 'blur(0px)' },
+        { transform: `translate(${dx * 0.18}px, ${dy * 0.18 - 40}px) rotate(${rot0 + 10}deg) scale(0.42)`, opacity: 1, filter: 'blur(0px)', offset: 0.28 },
+        { transform: `translate(${dx * 0.8}px, ${dy * 0.8 - 30}px) rotate(${rot0 + 40}deg) scale(${Math.max(0.2, endScale * 0.55)})`, opacity: 0.95, filter: 'blur(1px)', offset: 0.78 },
+        { transform: `translate(${dx}px, ${dy}px) rotate(${rot0 + 60}deg) scale(${endScale})`, opacity: 0, filter: 'blur(3px)' },
+      ], { duration: 1500, easing: 'cubic-bezier(.45,.05,.35,1)', fill: 'forwards' });
+      setTimeout(() => dish.spawn(g, { x: target.x, y: target.y }), 1250);
+      anim.onfinish = () => { fly.remove(); done(); };
+    },
+  });
+
+  // light menu
+  const menu = document.querySelector('.light-menu'), list = menu.querySelector('.lm-list'), btn = menu.querySelector('.lm-btn');
+  const SW = { pastel: 'radial-gradient(circle at 35% 35%, #ffd0e6, #c9d9ff 55%, #f4f2ee 80%)', lagoon: 'radial-gradient(circle at 35% 35%, #bff0ff, #7fd8d2 55%, #e9f2f4 80%)', night: 'radial-gradient(circle at 35% 35%, #8a6bff, #1b1f5a 55%, #05060f 80%)' };
+  const DESC = { pastel: 'soft paper field, warm accents', lagoon: 'cool aqua wash', night: '488 nm, glowing organisms' };
+  P.MODES.forEach((m, i) => {
+    const b = document.createElement('button'); b.className = 'lm-item';
+    const [kind, name] = m.label.split(' · ');
+    b.innerHTML = `<span class="lm-sw" style="background:${SW[m.id]}"></span><span class="lm-t"><b>${name}</b><small>${kind.toLowerCase()} — ${DESC[m.id]}</small></span>`;
+    b.onclick = () => { dish.setMode(i); menu.classList.remove('open'); btn.setAttribute('aria-expanded', 'false'); };
+    list.append(b);
+  });
+  const syncMenu = (i) => { list.querySelectorAll('.lm-item').forEach((b, j) => b.classList.toggle('on', j === i)); menu.querySelector('.lm-cur').textContent = P.MODES[i].label.split(' · ')[1]; };
+  dish.onMode(syncMenu); syncMenu(dish.modeIndex);
+  btn.onclick = (e) => { e.stopPropagation(); const o = menu.classList.toggle('open'); btn.setAttribute('aria-expanded', String(o)); };
+  document.addEventListener('click', (e) => { if (!menu.contains(e.target)) { menu.classList.remove('open'); btn.setAttribute('aria-expanded', 'false'); } });
+
+  const act = {
+    mode: () => dish.nextMode(),
+    tags: () => dish.toggleTags(),
+    clear: () => dish.clear(),
+    full: () => { const el = document.querySelector('.dish-wrap'); document.fullscreenElement ? document.exitFullscreen() : el.requestFullscreen && el.requestFullscreen(); },
+    panel: () => document.body.classList.toggle('no-panel'),
+  };
+  document.querySelectorAll('.dish-tools button').forEach((b) => (b.onclick = () => act[b.dataset.act]()));
+  window.addEventListener('keydown', (e) => {
+    if (e.target.tagName === 'INPUT') return;
+    const k = e.key.toLowerCase();
+    if (k === 'm' || k === 'ь') act.mode();
+    else if (k === 't' || k === 'е') act.tags();
+    else if (k === 'f' || k === 'а') act.full();
+    else if (k === 'h' || k === 'р') act.panel();
+    else if (k === 'r' || k === 'к') dish.spawn(P.randomGenome());
+    else if (k === 'q' || k === 'й') dish.cycleQuality();
+    else if (e.key === 'Delete') act.clear();
+  });
+})();
+</script>
+</body>
+</html>
